@@ -68,6 +68,49 @@ body {
     font-size: 1.1rem;
 }
 
+.role-info {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    border-left: 4px solid #667eea;
+}
+
+.role-info h4 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.role-info p {
+    margin: 0;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.demo-credentials {
+    background: #e8f4f8;
+    padding: 15px;
+    border-radius: 10px;
+    margin-top: 20px;
+    border-left: 4px solid #17a2b8;
+}
+
+.demo-credentials h4 {
+    margin: 0 0 10px 0;
+    color: #0c5460;
+}
+
+.demo-credentials .credential {
+    margin: 5px 0;
+    font-size: 0.9rem;
+    color: #0c5460;
+}
+
+.demo-credentials .credential strong {
+    display: inline-block;
+    width: 80px;
+}
+
 .login-form {
     display: flex;
     flex-direction: column;
@@ -924,6 +967,70 @@ body {
     margin: 5px 0 0 0;
     font-size: 12px;
     color: #666;
+}
+
+/* Workflow Configuration Styles */
+.stage-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #e1e5e9;
+    border-radius: 5px;
+    background: #f8f9fa;
+}
+
+.stage-item select {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #e1e5e9;
+    border-radius: 5px;
+}
+
+.stage-item button {
+    padding: 8px 12px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.stage-item button:hover {
+    background: #c0392b;
+}
+
+.rule-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #e1e5e9;
+    border-radius: 5px;
+    background: #f8f9fa;
+}
+
+.rule-item select,
+.rule-item input {
+    padding: 8px 12px;
+    border: 1px solid #e1e5e9;
+    border-radius: 5px;
+}
+
+.hybrid-config {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.hybrid-config .form-group {
+    border: 1px solid #e1e5e9;
+    padding: 15px;
+    border-radius: 8px;
+    background: #f8f9fa;
 }
 
 @media (max-width: 480px) {

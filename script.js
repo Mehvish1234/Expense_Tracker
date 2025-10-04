@@ -10,6 +10,22 @@ class ExpenseFlowAdmin {
         this.sessionId = null;
         this.auditLog = [];
         
+        this.roleDescriptions = {
+            'Admin': 'Full system access - manage users, categories, workflows, and company settings',
+            'Manager': 'Approval authority - review and approve/reject expense claims',
+            'Employee': 'Submit expenses - create and track expense claims',
+            'Director': 'Executive oversight - high-level approval and analytics',
+            'Finance': 'Financial control - budget management and financial reporting'
+        };
+
+        this.rolePortals = {
+            'Admin': 'admin-dashboard',
+            'Manager': 'manager.html',
+            'Employee': 'employee.html',
+            'Director': 'director.html',
+            'Finance': 'finance.html'
+        };
+        
         this.init();
     }
 
@@ -24,6 +40,11 @@ class ExpenseFlowAdmin {
         document.getElementById('login-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleLogin();
+        });
+
+        // Role selection change
+        document.getElementById('login-role').addEventListener('change', (e) => {
+            this.updateRoleInfo(e.target.value);
         });
 
         // Company setup form
@@ -76,6 +97,7 @@ class ExpenseFlowAdmin {
 
         // Workflow management
         document.getElementById('add-workflow-btn').addEventListener('click', () => {
+            this.populateWorkflowCategories();
             this.showModal('workflow-modal');
         });
 
@@ -130,13 +152,20 @@ class ExpenseFlowAdmin {
         // Modal close handlers
         document.querySelectorAll('.close').forEach(closeBtn => {
             closeBtn.addEventListener('click', (e) => {
-                this.hideModal(e.target.closest('.modal').id);
+                const modalId = e.target.closest('.modal').id;
+                if (modalId === 'workflow-modal') {
+                    this.resetWorkflowForm();
+                }
+                this.hideModal(modalId);
             });
         });
 
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal) {
+                    if (modal.id === 'workflow-modal') {
+                        this.resetWorkflowForm();
+                    }
                     this.hideModal(modal.id);
                 }
             });
@@ -152,6 +181,7 @@ class ExpenseFlowAdmin {
         });
 
         document.getElementById('cancel-workflow').addEventListener('click', () => {
+            this.resetWorkflowForm();
             this.hideModal('workflow-modal');
         });
 
@@ -162,30 +192,80 @@ class ExpenseFlowAdmin {
     }
 
     // Authentication Methods
+    updateRoleInfo(role) {
+        const roleInfo = document.getElementById('role-info');
+        const roleTitle = document.getElementById('role-title');
+        const roleDescription = document.getElementById('role-description');
+
+        if (role && this.roleDescriptions[role]) {
+            roleTitle.textContent = `${role} Portal`;
+            roleDescription.textContent = this.roleDescriptions[role];
+            roleInfo.style.display = 'block';
+        } else {
+            roleInfo.style.display = 'none';
+        }
+    }
+
     async handleLogin() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
+        const role = document.getElementById('login-role').value;
         const errorDiv = document.getElementById('login-error');
+
+        console.log('Login attempt:', { email, role, passwordLength: password.length });
+
+        // Clear previous errors
+        this.hideError();
+
+        // Validate inputs
+        if (!email || !password || !role) {
+            this.showError(errorDiv, 'Please fill in all fields');
+            return;
+        }
 
         try {
             // Simulate authentication
-            const user = await this.authenticateUser(email, password);
+            const user = await this.authenticateUser(email, password, role);
             
             if (!user) {
-                this.showError(errorDiv, 'Invalid credentials or account inactive');
+                this.showError(errorDiv, 'Invalid credentials or role mismatch');
+                return;
+            }
+
+            if (user.status !== 'active') {
+                this.showError(errorDiv, 'Account is inactive. Please contact administrator.');
                 return;
             }
 
             this.currentUser = user;
             this.sessionId = this.generateSessionId();
-            this.logAudit('LOGIN', `User ${user.name} logged in`);
+            localStorage.setItem('expenseFlowSessionId', this.sessionId);
+            localStorage.setItem('expenseFlowCurrentUser', JSON.stringify(user));
+            
+            this.logAudit('LOGIN', `${user.role} ${user.name} logged in`);
 
-            // Check if this is first login
-            if (this.isFirstLogin()) {
-                this.showPage('company-setup-page');
+            // Redirect based on role
+            console.log('User authenticated successfully:', user.role);
+            
+            if (user.role === 'Admin') {
+                // Check if this is first login
+                if (this.isFirstLogin()) {
+                    console.log('First login - showing company setup');
+                    this.showPage('company-setup-page');
+                } else {
+                    console.log('Admin login - showing dashboard');
+                    this.showPage('admin-dashboard');
+                    this.loadDashboard();
+                }
             } else {
-                this.showPage('admin-dashboard');
-                this.loadDashboard();
+                // Redirect to other portals
+                const portalUrl = this.rolePortals[user.role];
+                console.log('Redirecting to portal:', portalUrl);
+                if (portalUrl) {
+                    window.location.href = portalUrl;
+                } else {
+                    this.showError(errorDiv, `No portal available for role: ${user.role}`);
+                }
             }
 
         } catch (error) {
@@ -193,14 +273,18 @@ class ExpenseFlowAdmin {
         }
     }
 
-    async authenticateUser(email, password) {
+    async authenticateUser(email, password, selectedRole) {
         // Simulate encrypted password check
         const storedUsers = JSON.parse(localStorage.getItem('expenseFlowUsers') || '[]');
+        console.log('Available users:', storedUsers.map(u => ({ email: u.email, role: u.role })));
+        
         const user = storedUsers.find(u => 
             (u.email === email || u.username === email) && 
+            u.role === selectedRole &&
             this.verifyPassword(password, u.password)
         );
         
+        console.log('Found user:', user ? { email: user.email, role: user.role } : 'None');
         return user && user.status === 'active' ? user : null;
     }
 
@@ -248,15 +332,49 @@ class ExpenseFlowAdmin {
 
     initializeDefaultCategories() {
         const defaultCategories = [
-            { id: this.generateId(), name: 'Travel', description: 'Business travel expenses', icon: 'fas fa-plane', color: '#667eea' },
-            { id: this.generateId(), name: 'Meals & Entertainment', description: 'Client meals and entertainment', icon: 'fas fa-utensils', color: '#f093fb' },
-            { id: this.generateId(), name: 'Office Supplies', description: 'Office equipment and supplies', icon: 'fas fa-clipboard', color: '#4facfe' },
-            { id: this.generateId(), name: 'IT Equipment', description: 'Technology and software', icon: 'fas fa-laptop', color: '#43e97b' },
-            { id: this.generateId(), name: 'Miscellaneous', description: 'Other business expenses', icon: 'fas fa-question', color: '#ffa726' }
+            { id: 'cat_001', name: 'Travel', description: 'Business travel expenses', icon: 'fas fa-plane', color: '#667eea' },
+            { id: 'cat_002', name: 'Meals & Entertainment', description: 'Client meals and entertainment', icon: 'fas fa-utensils', color: '#f093fb' },
+            { id: 'cat_003', name: 'Office Supplies', description: 'Office equipment and supplies', icon: 'fas fa-clipboard', color: '#4facfe' },
+            { id: 'cat_004', name: 'IT Equipment', description: 'Technology and software', icon: 'fas fa-laptop', color: '#43e97b' },
+            { id: 'cat_005', name: 'Miscellaneous', description: 'Other business expenses', icon: 'fas fa-question', color: '#ffa726' }
         ];
 
         this.categories = defaultCategories;
+        this.initializeDefaultWorkflows();
         this.saveData();
+    }
+
+    initializeDefaultWorkflows() {
+        const defaultWorkflows = [
+            {
+                id: 'wf_001',
+                name: 'Travel Approval Workflow',
+                category: 'cat_001',
+                type: 'sequential',
+                threshold: 1000,
+                config: {
+                    approvers: ['admin_001', 'user_001'] // Admin and first manager
+                },
+                createdAt: new Date().toISOString()
+            },
+            {
+                id: 'wf_002',
+                name: 'Meals Approval Workflow',
+                category: 'cat_002',
+                type: 'conditional',
+                threshold: 500,
+                config: {
+                    approvers: ['user_001', 'user_002'],
+                    conditions: [
+                        { type: 'percentage', value: 50 },
+                        { type: 'keyApprover', approverId: 'admin_001' }
+                    ]
+                },
+                createdAt: new Date().toISOString()
+            }
+        ];
+
+        this.workflows = defaultWorkflows;
     }
 
     // Dashboard Methods
@@ -562,24 +680,86 @@ class ExpenseFlowAdmin {
 
     handleAddWorkflow() {
         const formData = new FormData(document.getElementById('workflow-form'));
-        const workflowData = {
-            id: this.generateId(),
-            name: formData.get('name'),
-            category: formData.get('category'),
-            type: formData.get('type'),
-            threshold: formData.get('threshold') || null,
-            config: this.getWorkflowConfig(),
-            createdAt: new Date().toISOString()
-        };
+        const editId = document.getElementById('workflow-form').dataset.editId;
+        
+        if (editId) {
+            // Update existing workflow
+            const workflow = this.workflows.find(w => w.id === editId);
+            if (workflow) {
+                workflow.name = formData.get('name');
+                workflow.category = formData.get('category');
+                workflow.type = formData.get('type');
+                workflow.threshold = formData.get('threshold') || null;
+                workflow.config = this.getWorkflowConfig();
+                workflow.updatedAt = new Date().toISOString();
+                
+                this.saveData();
+                this.loadWorkflows();
+                this.hideModal('workflow-modal');
+                this.logAudit('WORKFLOW_UPDATED', `Workflow ${workflow.name} updated`);
+                
+                // Reset edit mode
+                document.getElementById('workflow-form').dataset.editId = '';
+                document.querySelector('#workflow-modal .modal-header h3').textContent = 'Configure Workflow';
+                document.querySelector('#workflow-form button[type="submit"]').textContent = 'Save Workflow';
+            }
+        } else {
+            // Create new workflow
+            const workflowData = {
+                id: this.generateId(),
+                name: formData.get('name'),
+                category: formData.get('category'),
+                type: formData.get('type'),
+                threshold: formData.get('threshold') || null,
+                config: this.getWorkflowConfig(),
+                createdAt: new Date().toISOString()
+            };
 
-        this.workflows.push(workflowData);
-        this.saveData();
-        this.loadWorkflows();
-        this.hideModal('workflow-modal');
-        this.logAudit('WORKFLOW_CREATED', `Workflow ${workflowData.name} created`);
+            this.workflows.push(workflowData);
+            this.saveData();
+            this.loadWorkflows();
+            this.hideModal('workflow-modal');
+            this.logAudit('WORKFLOW_CREATED', `Workflow ${workflowData.name} created`);
+        }
 
         // Reset form
         document.getElementById('workflow-form').reset();
+    }
+
+    editWorkflow(workflowId) {
+        const workflow = this.workflows.find(w => w.id === workflowId);
+        if (workflow) {
+            // Populate edit form
+            document.getElementById('workflow-name').value = workflow.name;
+            document.getElementById('workflow-category').value = workflow.category;
+            document.getElementById('workflow-type').value = workflow.type;
+            document.getElementById('threshold-amount').value = workflow.threshold || '';
+            
+            // Store the workflow ID for updating
+            document.getElementById('workflow-form').dataset.editId = workflowId;
+            
+            // Update the form title
+            document.querySelector('#workflow-modal .modal-header h3').textContent = 'Edit Workflow';
+            
+            // Update the submit button
+            document.querySelector('#workflow-form button[type="submit"]').textContent = 'Update Workflow';
+            
+            // Populate categories and update workflow config
+            this.populateWorkflowCategories();
+            this.updateWorkflowConfig(workflow.type);
+            
+            this.showModal('workflow-modal');
+        }
+    }
+
+    deleteWorkflow(workflowId) {
+        if (confirm('Are you sure you want to delete this workflow?')) {
+            const workflow = this.workflows.find(w => w.id === workflowId);
+            this.workflows = this.workflows.filter(w => w.id !== workflowId);
+            this.saveData();
+            this.loadWorkflows();
+            this.logAudit('WORKFLOW_DELETED', `Workflow ${workflow.name} deleted`);
+        }
     }
 
     updateWorkflowConfig(type) {
@@ -620,12 +800,82 @@ class ExpenseFlowAdmin {
                     </div>
                 </div>
             `;
+        } else if (type === 'hybrid') {
+            configDiv.innerHTML = `
+                <div class="form-group">
+                    <label>Hybrid Workflow Configuration</label>
+                    <div class="hybrid-config">
+                        <div class="form-group">
+                            <label>Sequential Stages</label>
+                            <div id="approval-stages">
+                                <div class="stage-item">
+                                    <select name="approver1">
+                                        <option value="">Select Approver</option>
+                                        ${this.getManagerOptions()}
+                                    </select>
+                                    <button type="button" onclick="adminSystem.removeStage(this)">Remove</button>
+                                </div>
+                            </div>
+                            <button type="button" onclick="adminSystem.addStage()">Add Stage</button>
+                        </div>
+                        <div class="form-group">
+                            <label>Conditional Rules</label>
+                            <div class="rule-item">
+                                <select name="condition">
+                                    <option value="amount">Amount-based</option>
+                                    <option value="percentage">Percentage-based</option>
+                                    <option value="category">Category-based</option>
+                                </select>
+                                <input type="text" name="value" placeholder="Value">
+                                <select name="approver">
+                                    <option value="">Select Approver</option>
+                                    ${this.getManagerOptions()}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
     }
 
     getWorkflowConfig() {
         // Return workflow configuration based on form data
         return {};
+    }
+
+    addStage() {
+        const stagesContainer = document.getElementById('approval-stages');
+        const stageCount = stagesContainer.children.length + 1;
+        
+        const stageDiv = document.createElement('div');
+        stageDiv.className = 'stage-item';
+        stageDiv.innerHTML = `
+            <select name="approver${stageCount}">
+                <option value="">Select Approver</option>
+                ${this.getManagerOptions()}
+            </select>
+            <button type="button" onclick="adminSystem.removeStage(this)">Remove</button>
+        `;
+        
+        stagesContainer.appendChild(stageDiv);
+    }
+
+    removeStage(button) {
+        button.parentElement.remove();
+    }
+
+    resetWorkflowForm() {
+        // Reset edit mode
+        document.getElementById('workflow-form').dataset.editId = '';
+        document.querySelector('#workflow-modal .modal-header h3').textContent = 'Configure Workflow';
+        document.querySelector('#workflow-form button[type="submit"]').textContent = 'Save Workflow';
+        
+        // Clear form
+        document.getElementById('workflow-form').reset();
+        
+        // Clear workflow config
+        document.getElementById('workflow-config').innerHTML = '';
     }
 
     getCategoryName(categoryId) {
@@ -635,9 +885,21 @@ class ExpenseFlowAdmin {
 
     getManagerOptions() {
         return this.users
-            .filter(user => user.role === 'Manager' || user.role === 'Admin')
-            .map(user => `<option value="${user.id}">${user.name}</option>`)
+            .filter(user => user.role === 'Manager' || user.role === 'Admin' || user.role === 'Director')
+            .map(user => `<option value="${user.id}">${user.name} (${user.role})</option>`)
             .join('');
+    }
+
+    populateWorkflowCategories() {
+        const categorySelect = document.getElementById('workflow-category');
+        categorySelect.innerHTML = '<option value="">Select Category</option>';
+        
+        this.categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.id;
+            option.textContent = category.name;
+            categorySelect.appendChild(option);
+        });
     }
 
     // Chart Methods
@@ -754,6 +1016,13 @@ class ExpenseFlowAdmin {
         }, 5000);
     }
 
+    hideError() {
+        const errorDiv = document.getElementById('login-error');
+        if (errorDiv) {
+            errorDiv.style.display = 'none';
+        }
+    }
+
     generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
     }
@@ -790,10 +1059,16 @@ class ExpenseFlowAdmin {
         if (sessionId) {
             this.sessionId = sessionId;
             this.currentUser = JSON.parse(localStorage.getItem('expenseFlowCurrentUser') || 'null');
-            if (this.currentUser) {
+            if (this.currentUser && this.currentUser.role === 'Admin') {
                 this.showPage('admin-dashboard');
                 this.loadDashboard();
+            } else {
+                // User is not an admin, show login page
+                this.showPage('login-page');
             }
+        } else {
+            // No session, show login page
+            this.showPage('login-page');
         }
     }
 
@@ -1247,8 +1522,10 @@ class ExpenseFlowAdmin {
     }
 }
 
-// Initialize the admin system
-const adminSystem = new ExpenseFlowAdmin();
+// Initialize the admin system when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    const adminSystem = new ExpenseFlowAdmin();
+});
 
 // Add some sample data for demonstration
 if (!localStorage.getItem('expenseFlowUsers') || JSON.parse(localStorage.getItem('expenseFlowUsers')).length === 0) {
@@ -1262,7 +1539,103 @@ if (!localStorage.getItem('expenseFlowUsers') || JSON.parse(localStorage.getItem
             password: btoa('admin123'), // In real app, use proper hashing
             status: 'active',
             createdAt: new Date().toISOString()
+        },
+        {
+            id: 'user_001',
+            name: 'John Manager',
+            email: 'john.manager@expenseflow.com',
+            role: 'Manager',
+            manager: null,
+            password: btoa('manager123'),
+            status: 'active',
+            createdAt: new Date().toISOString()
+        },
+        {
+            id: 'user_002',
+            name: 'Jane Manager',
+            email: 'jane.manager@expenseflow.com',
+            role: 'Manager',
+            manager: null,
+            password: btoa('manager123'),
+            status: 'active',
+            createdAt: new Date().toISOString()
+        },
+        {
+            id: 'user_003',
+            name: 'Bob Employee',
+            email: 'bob.employee@expenseflow.com',
+            role: 'Employee',
+            manager: 'user_001',
+            password: btoa('employee123'),
+            status: 'active',
+            createdAt: new Date().toISOString()
+        },
+        {
+            id: 'user_004',
+            name: 'Alice Director',
+            email: 'alice.director@expenseflow.com',
+            role: 'Director',
+            manager: null,
+            password: btoa('director123'),
+            status: 'active',
+            createdAt: new Date().toISOString()
+        },
+        {
+            id: 'user_005',
+            name: 'Charlie Finance',
+            email: 'charlie.finance@expenseflow.com',
+            role: 'Finance',
+            manager: null,
+            password: btoa('finance123'),
+            status: 'active',
+            createdAt: new Date().toISOString()
         }
     ];
     localStorage.setItem('expenseFlowUsers', JSON.stringify(sampleUsers));
+}
+
+// Add sample expenses for testing
+if (!localStorage.getItem('expenseFlowExpenses') || JSON.parse(localStorage.getItem('expenseFlowExpenses')).length === 0) {
+    const sampleExpenses = [
+        {
+            id: 'exp_001',
+            employeeId: 'user_003',
+            title: 'Business Travel - New York',
+            description: 'Travel expenses for client meeting in New York',
+            amount: 1250.50,
+            category: 'cat_001',
+            date: new Date().toISOString(),
+            status: 'pending',
+            currentApprovalStage: 0,
+            createdAt: new Date().toISOString(),
+            receipts: ['receipt_ny_travel.pdf', 'hotel_invoice.pdf']
+        },
+        {
+            id: 'exp_002',
+            employeeId: 'user_003',
+            title: 'Client Dinner',
+            description: 'Dinner with potential client',
+            amount: 185.75,
+            category: 'cat_002',
+            date: new Date().toISOString(),
+            status: 'pending',
+            currentApprovalStage: 0,
+            createdAt: new Date().toISOString(),
+            receipts: ['restaurant_receipt.pdf']
+        }
+    ];
+    localStorage.setItem('expenseFlowExpenses', JSON.stringify(sampleExpenses));
+}
+
+// Initialize company data if not exists
+if (!localStorage.getItem('expenseFlowCompany')) {
+    const companyData = {
+        name: 'ExpenseFlow Demo Company',
+        address: '123 Business Street, City, State 12345',
+        phone: '+1 (555) 123-4567',
+        email: 'info@expenseflow.com',
+        currency: 'USD',
+        timezone: 'America/New_York'
+    };
+    localStorage.setItem('expenseFlowCompany', JSON.stringify(companyData));
 }
